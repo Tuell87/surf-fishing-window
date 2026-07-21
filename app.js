@@ -6,17 +6,29 @@ function saveConfig(){config.notifyScore=Number($("notifyScore").value||72);conf
 function escapeHtml(v){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"})[c])}
 
 // --- Map (v0.2.1 stability rewrite) ---------------------------------------
-// The map is built once. After that we MOVE markers with setLatLng instead of
-// deleting and re-adding them, and we never recenter or re-zoom during a
-// forecast refresh. That removes the flicker and the zoom "jump" on iPhone.
 function initMap(){
   if(!window.L){$("mapStatus").textContent="Map library unavailable";return}
   map=L.map("map",{zoomControl:true,attributionControl:true}).setView([config.lat,config.lon],13);
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(map);
+  // v0.2.2: switched from raw tile.openstreetmap.org to CARTO's tile CDN.
+  // The raw OSM tile server throttles/blocks apps that hit it repeatedly
+  // (its usage policy is for light, one-off use), which is what was causing
+  // most tiles to come back gray. CARTO's tiles are built for app traffic
+  // and still use OpenStreetMap's underlying map data.
+  const tileLayer=L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",{
+    subdomains:"abcd",
+    maxZoom:20,
+    attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+  }).addTo(map);
+  // If a tile still fails to load (e.g. a brief network hiccup), retry it
+  // once instead of leaving a permanent gray square.
+  tileLayer.on("tileerror",err=>{
+    const tile=err.tile;
+    if(tile && !tile.dataset.retried){
+      tile.dataset.retried="1";
+      setTimeout(()=>{tile.src=tile.src},900);
+    }
+  });
   updateMapMarkers(false);
-  // iOS PWAs sometimes report the container size wrong until layout settles,
-  // which makes zooming jump. Re-check the size a couple of times after load
-  // and whenever the phone rotates.
   const fixSize=()=>{if(map)map.invalidateSize(false)};
   setTimeout(fixSize,200);
   setTimeout(fixSize,600);
@@ -25,14 +37,12 @@ function initMap(){
 }
 function updateMapMarkers(recenter=false,accuracy=null){
   if(!map)return;
-  // Forecast (blue) marker — create once, then move.
   if(!forecastMarker){
     forecastMarker=L.circleMarker([config.lat,config.lon],{radius:10,color:"#fff",weight:3,fillColor:"#176c87",fillOpacity:1}).addTo(map).bindPopup(`<strong>${escapeHtml(config.locationName)}</strong><br>Forecast location`);
   }else{
     forecastMarker.setLatLng([config.lat,config.lon]);
     forecastMarker.setPopupContent(`<strong>${escapeHtml(config.locationName)}</strong><br>Forecast location`);
   }
-  // Accuracy circle — only touched when we have a fresh GPS accuracy value.
   if(Number.isFinite(accuracy)&&accuracy>0){
     if(!accuracyCircle){
       accuracyCircle=L.circle([config.lat,config.lon],{radius:accuracy,color:"#176c87",weight:1,fillColor:"#176c87",fillOpacity:.1}).addTo(map);
@@ -41,7 +51,6 @@ function updateMapMarkers(recenter=false,accuracy=null){
       accuracyCircle.setRadius(accuracy);
     }
   }
-  // Tide station (anchor) marker — create once, move if the station changes.
   const s=TIDE_STATIONS[config.tideStation];
   if(s){
     if(!tideMarker){
@@ -53,8 +62,6 @@ function updateMapMarkers(recenter=false,accuracy=null){
   }
   $("openMapsLink").href=`https://maps.apple.com/?ll=${config.lat},${config.lon}&q=${encodeURIComponent(config.locationName)}`;
   $("mapStatus").textContent=`${config.lat.toFixed(4)}, ${config.lon.toFixed(4)}`;
-  // Only recenter on an explicit request (Center button or a fresh GPS fix),
-  // and keep the user's current zoom instead of snapping back to 14.
   if(recenter){map.stop();map.setView([config.lat,config.lon],map.getZoom()||14)}
 }
 // -------------------------------------------------------------------------
