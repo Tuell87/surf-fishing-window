@@ -22,11 +22,32 @@
     <section id="installCard" class="card install hidden"><h2>Install this app</h2><p>Tap Share in Safari, then <strong>Add to Home Screen</strong>.</p><button id="dismissInstall" type="button">Got it</button></section>
     <section class="card location-card"><div><p class="label">Forecast location</p><strong id="locationName">Santa Rosa Beach, FL</strong></div><button id="locationBtn" type="button">Use my location</button></section>
     <section id="safetyCard" class="card safety loading"><p class="label">Safety status</p><h2 id="safetyTitle">Checking official conditions…</h2><p id="safetyText">Loading National Weather Service alerts and forecast data.</p></section>
-    <section class="card best-card"><p class="label">Best upcoming window</p><div class="score-row"><div><h2 id="bestTime">—</h2><p id="bestSummary">Waiting for data</p></div><div id="bestScore" class="score">--</div></div></section>
-    <div class="section-title"><h2>Fishing map</h2><span id="mapStatus">Forecast location</span></div>
-    <section class="card map-card"><div id="map" aria-label="Interactive fishing map"></div><div class="map-actions"><button id="centerMapBtn" type="button">Center map</button><a id="openMapsLink" class="button-link" href="#" target="_blank" rel="noopener">Open in Maps</a></div><p class="fineprint">Blue marker: forecast location. Anchor marker: NOAA tide station 8729376.</p></section>
-    <div class="section-title"><h2>Next 48 hours</h2><span id="updatedAt"></span></div>
-    <section id="windows" class="windows"></section>
+
+    <div class="app-tabs" role="tablist">
+      <button class="tab-button active" data-tab="forecast" type="button" role="tab" aria-selected="true">Forecast</button>
+      <button class="tab-button" data-tab="map" type="button" role="tab" aria-selected="false">Map</button>
+      <button class="tab-button" data-tab="cameras" type="button" role="tab" aria-selected="false">Cameras</button>
+    </div>
+
+    <section id="panel-forecast" class="tab-panel active">
+      <section class="card best-card"><p class="label">Best upcoming window</p><div class="score-row"><div><h2 id="bestTime">—</h2><p id="bestSummary">Waiting for data</p></div><div id="bestScore" class="score">--</div></div></section>
+      <div class="section-title"><h2>Next 48 hours</h2><span id="updatedAt"></span></div>
+      <details class="windows-details">
+        <summary>Show all 48-hour windows</summary>
+        <section id="windows" class="windows"></section>
+      </details>
+    </section>
+
+    <section id="panel-map" class="tab-panel">
+      <div class="section-title"><h2>Fishing map</h2><span id="mapStatus">Forecast location</span></div>
+      <section class="card map-card"><div id="map" aria-label="Interactive fishing map"></div><div class="map-actions"><button id="centerMapBtn" type="button">Center map</button><a id="openMapsLink" class="button-link" href="#" target="_blank" rel="noopener">Open in Maps</a></div><p class="fineprint">Blue marker: forecast location. Anchor marker: NOAA tide station 8729376. If one map source is unavailable, this switches to a backup source automatically.</p></section>
+    </section>
+
+    <section id="panel-cameras" class="tab-panel">
+      <div class="section-title"><h2>Live cams</h2><span id="cameraStatus">Nearby cams</span></div>
+      <section id="cameraGrid" class="camera-grid"></section>
+    </section>
+
     <div class="section-title"><h2>Settings</h2></div>
     <section class="card settings"><label>Notify score<input id="notifyScore" type="number" min="0" max="100" inputmode="numeric"></label><label>NOAA tide station<input id="tideStation" type="text" inputmode="numeric"></label><button id="notifyBtn" type="button">Enable notifications</button><p class="fineprint">Notifications in this version work while the app is open. Background push alerts require a hosted notification service.</p></section>
     <section class="card disclaimer"><p class="label">Safety override</p><p>Never fish under lightning, double-red beach flags, high-surf warnings, tropical-storm conditions, or directions from local officials.</p></section>
