@@ -16,6 +16,12 @@ function initMap(){
   document.addEventListener("visibilitychange",()=>{if(!document.hidden)setTimeout(invalidate,100)});
   if(window.ResizeObserver){new ResizeObserver(()=>invalidate()).observe($("map"))}
 }
+$("toggleWindows").addEventListener("click",()=>{
+  const collapsed=$("windows").classList.toggle("collapsed");
+  $("togglewindows").setAttribute("aria-expanded",String(!collapsed));
+  $("toggleWindows").textContent=collapsed?"Show details":"Hide details";
+});
+
 function updateMapMarkers(recenter=true,accuracy=null){
   if(!map)return;
   const hasAccuracy=Number.isFinite(accuracy)&&accuracy>0;
