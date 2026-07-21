@@ -64,3 +64,24 @@
 @media (min-width: 700px) {
   .camera-grid { grid-template-columns: 1fr 1fr; }
 }
+
+.windows-details { margin: 0 0 12px; }
+.windows-details > summary {
+  cursor: pointer;
+  list-style: none;
+  background: white;
+  border-radius: 14px;
+  padding: 13px 16px;
+  font-weight: 700;
+  color: #123047;
+  box-shadow: 0 4px 16px rgba(19,48,71,.08);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.windows-details > summary::-webkit-details-marker { display: none; }
+.windows-details > summary::after { content: "▾"; color: #647681; font-size: .9rem; }
+.windows-details[open] > summary::after { content: "▴"; }
+.windows-details .windows { margin-top: 9px; }
+.camera-card .distance { color: #176c87; font-weight: 700; }
+.camera-preview-img { width: 100%; height: 130px; object-fit: cover; display: block; }
