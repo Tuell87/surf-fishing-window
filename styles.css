@@ -85,3 +85,12 @@
 .windows-details .windows { margin-top: 9px; }
 .camera-card .distance { color: #176c87; font-weight: 700; }
 .camera-preview-img { width: 100%; height: 130px; object-fit: cover; display: block; }
+
+.day-heading { margin: 14px 4px 6px; font-size: .78rem; font-weight: 800; color: #536773; text-transform: uppercase; letter-spacing: .06em; }
+.day-heading:first-child { margin-top: 0; }
+.windows-compact { background: white; border-radius: 14px; overflow: hidden; box-shadow: 0 4px 16px rgba(19,48,71,.08); margin-bottom: 4px; }
+.window-row { display: grid; grid-template-columns: 64px 1fr auto; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid #eef4f6; font-size: .86rem; }
+.window-row:last-child { border-bottom: none; }
+.window-row .w-time { font-weight: 700; color: #123047; }
+.window-row .w-stat { color: #536773; }
+.window-row .badge { padding: 5px 9px; min-width: 40px; font-size: .82rem; }
