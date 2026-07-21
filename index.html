@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#123047">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Fish Window">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+  <title>Surf Fishing Window</title>
+</head>
+<body>
+  <header>
+    <div>
+      <p class="eyebrow">SANTA ROSA BEACH</p>
+      <h1>Surf Fishing Window</h1>
+    </div>
+    <button id="refreshBtn" class="icon-btn" aria-label="Refresh">↻</button>
+  </header>
+
+  <main>
+    <section id="installCard" class="card install hidden">
+      <strong>Install this app</strong>
+      <p>Tap Share in Safari, then <b>Add to Home Screen</b>.</p>
+      <button id="dismissInstall">Got it</button>
+    </section>
+
+    <section class="card location-card">
+      <div>
+        <span class="label">Forecast location</span>
+        <strong id="locationName">Santa Rosa Beach, FL</strong>
+      </div>
+      <button id="locationBtn">Use my location</button>
+    </section>
+
+    <section id="safetyCard" class="card safety loading">
+      <span class="label">Safety status</span>
+      <h2 id="safetyTitle">Checking official conditions…</h2>
+      <p id="safetyText">Loading National Weather Service alerts and forecast data.</p>
+    </section>
+
+    <section class="card best-card">
+      <span class="label">Best upcoming window</span>
+      <div class="score-row">
+        <div>
+          <h2 id="bestTime">—</h2>
+          <p id="bestSummary">Waiting for data</p>
+        </div>
+        <div id="bestScore" class="score">--</div>
+      </div>
+    </section>
+
+    <div class="section-title">
+      <h2>Next 48 hours</h2>
+      <span id="updatedAt"></span>
+    </div>
+    <section id="windows" class="windows"></section>
+
+    <section class="card settings">
+      <h2>Settings</h2>
+      <label>Notify score
+        <input id="notifyScore" type="number" min="50" max="100" value="72">
+      </label>
+      <label>NOAA tide station
+        <input id="tideStation" type="text" value="8729376">
+      </label>
+      <button id="notifyBtn">Enable notifications</button>
+      <p class="fineprint">Notifications in this version work while the app is open. Background push alerts require the optional hosted notification service.</p>
+    </section>
+
+    <section class="card disclaimer">
+      <strong>Safety override</strong>
+      <p>Never fish under lightning, double-red beach flags, high-surf warnings, tropical-storm conditions, or directions from local officials.</p>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
