@@ -51,6 +51,11 @@ function initMap(){
   map=L.map("map",{zoomControl:true,attributionControl:true}).setView([config.lat,config.lon],13);
   addTileLayer(0);
   updateMapMarkers(false);
+  // Safety net: some stuck tiles never actually fire a "tileerror" event
+  // (e.g. a request that gets silently cancelled rather than failing), so
+  // our retry logic never sees them. Force everything currently in view
+  // to re-request once, a couple seconds after first showing the map.
+  setTimeout(()=>{if(tileLayer)tileLayer.redraw()},2500);
   const fixSize=()=>{if(map)map.invalidateSize(false)};
   setTimeout(fixSize,200);
   setTimeout(fixSize,600);
@@ -84,7 +89,7 @@ function updateMapMarkers(recenter=false,accuracy=null){
   }
   $("openMapsLink").href=`https://maps.apple.com/?ll=${config.lat},${config.lon}&q=${encodeURIComponent(config.locationName)}`;
   $("mapStatus").textContent=`${config.lat.toFixed(4)}, ${config.lon.toFixed(4)}`;
-  if(recenter){map.stop();map.setView([config.lat,config.lon],map.getZoom()||14)}
+  if(recenter){map.stop();map.setView([config.lat,config.lon],map.getZoom()||14);setTimeout(()=>{if(tileLayer)tileLayer.redraw()},1500)}
 }
 // -------------------------------------------------------------------------
 
