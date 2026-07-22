@@ -22,6 +22,7 @@
     <section id="installCard" class="card install hidden"><h2>Install this app</h2><p>Tap Share in Safari, then <strong>Add to Home Screen</strong>.</p><button id="dismissInstall" type="button">Got it</button></section>
     <section class="card location-card"><div><p class="label">Forecast location</p><strong id="locationName">Santa Rosa Beach, FL</strong></div><button id="locationBtn" type="button">Use my location</button></section>
     <section id="safetyCard" class="card safety loading"><p class="label">Safety status</p><h2 id="safetyTitle">Checking official conditions…</h2><p id="safetyText">Loading National Weather Service alerts and forecast data.</p></section>
+    <section class="card best-card"><p class="label">Best upcoming window</p><div class="score-row"><div><h2 id="bestTime">—</h2><p id="bestSummary">Waiting for data</p></div><div id="bestScore" class="score">--</div></div></section>
 
     <div class="app-tabs" role="tablist">
       <button class="tab-button active" data-tab="forecast" type="button" role="tab" aria-selected="true">Forecast</button>
@@ -30,7 +31,6 @@
     </div>
 
     <section id="panel-forecast" class="tab-panel active">
-      <section class="card best-card"><p class="label">Best upcoming window</p><div class="score-row"><div><h2 id="bestTime">—</h2><p id="bestSummary">Waiting for data</p></div><div id="bestScore" class="score">--</div></div></section>
       <div class="section-title"><h2>Next 48 hours</h2><span id="updatedAt"></span></div>
       <details class="windows-details">
         <summary>Show all 48-hour windows</summary>
