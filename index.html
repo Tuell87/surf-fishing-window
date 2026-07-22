@@ -24,6 +24,12 @@
     <section id="safetyCard" class="card safety loading"><p class="label">Safety status</p><h2 id="safetyTitle">Checking official conditions…</h2><p id="safetyText">Loading National Weather Service alerts and forecast data.</p></section>
     <section class="card best-card"><p class="label">Best upcoming window</p><div class="score-row"><div><h2 id="bestTime">—</h2><p id="bestSummary">Waiting for data</p></div><div id="bestScore" class="score">--</div></div></section>
 
+    <section class="card flags-card">
+      <p class="label">Local beach flags — South Walton, FL</p>
+      <script src="https://www.swfd.org/CMSPages/GetResource.ashx?scriptfile=/BitWizards/js/swfd-surf-widget.js&resolvemacros=true" type="text/javascript"></script>
+      <p class="fineprint">Official widget from South Walton Fire District (swfd.org). Covers South Walton / Walton County beaches only — if your forecast location is somewhere else, check local lifeguard flags directly.</p>
+    </section>
+
     <div class="app-tabs" role="tablist">
       <button class="tab-button active" data-tab="forecast" type="button" role="tab" aria-selected="true">Forecast</button>
       <button class="tab-button" data-tab="map" type="button" role="tab" aria-selected="false">Map</button>
@@ -50,7 +56,7 @@
 
     <div class="section-title"><h2>Settings</h2></div>
     <section class="card settings"><label>Notify score<input id="notifyScore" type="number" min="0" max="100" inputmode="numeric"></label><label>NOAA tide station<select id="tideStation"></select></label><button id="notifyBtn" type="button">Enable notifications</button><p class="fineprint">Notifications in this version work while the app is open. Background push alerts require a hosted notification service.</p></section>
-    <section class="card disclaimer"><p class="label">Safety override</p><p>Never fish under lightning, double-red beach flags, high-surf warnings, tropical-storm conditions, or directions from local officials.</p></section>
+    <section class="card disclaimer"><p class="label">Safety override</p><p>Never fish under lightning, double-red beach flags, high-surf warnings, tropical-storm conditions, or directions from local officials.</p><p class="fineprint">Official flag status: <a href="https://www.swfd.org/beach-safety/surf-conditions" target="_blank" rel="noopener">swfd.org/beach-safety/surf-conditions</a> · Text "SAFETY" to 31279</p></section>
   </main>
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="app.js"></script>

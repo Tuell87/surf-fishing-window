@@ -1,4 +1,4 @@
-const CACHE = "fish-window-v10";
+const CACHE = "fish-window-v11";
 const ASSETS = ["./","index.html","styles.css","app.js","manifest.webmanifest","icons/icon-192.png","icons/icon-512.png"];
 self.addEventListener("install", e => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS))); });
 self.addEventListener("activate", e => e.waitUntil(
@@ -19,7 +19,8 @@ self.addEventListener("fetch", e => {
     e.request.url.includes("tidesandcurrents.noaa.gov") ||
     e.request.url.includes("tiles.openfreemap.org") ||
     e.request.url.includes("basemaps.cartocdn.com") ||
-    e.request.url.includes("api.windy.com")
+    e.request.url.includes("api.windy.com") ||
+    e.request.url.includes("swfd.org")
   ) return;
   e.respondWith(fetch(e.request).then(r => {
     const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request,copy)); return r;
