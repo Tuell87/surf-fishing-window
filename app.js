@@ -24,9 +24,23 @@ function addTileLayer(index){
   activeTileIndex=index;
   tileErrorCount=0;
   tileLayer=L.tileLayer(src.url,src.options).addTo(map);
-  tileLayer.on("tileerror",()=>{
+  tileLayer.on("tileerror",err=>{
     tileErrorCount++;
-    if(tileErrorCount>=6 && activeTileIndex<TILE_SOURCES.length-1){
+    // Retry the individual failed tile (up to 2x) instead of leaving it
+    // permanently blank — this is what was missing: scattered one-off tile
+    // failures (a handful out of dozens per view) never hit the "swap the
+    // whole source" threshold below, so they just sat blank forever.
+    const tile=err.tile;
+    if(tile){
+      const attempts=Number(tile.dataset.retryCount||0);
+      if(attempts<2){
+        tile.dataset.retryCount=String(attempts+1);
+        setTimeout(()=>{tile.src=tile.src},600*(attempts+1));
+      }
+    }
+    // Separately, if the whole source is unhealthy (lots of errors, not
+    // just one-off blips), swap to the next source in the list.
+    if(tileErrorCount>=12 && activeTileIndex<TILE_SOURCES.length-1){
       $("mapStatus").textContent="Switching map source…";
       addTileLayer(activeTileIndex+1);
     }
