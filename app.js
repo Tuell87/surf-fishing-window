@@ -2,94 +2,96 @@ const DEFAULTS={lat:30.346,lon:-86.227,locationName:"Santa Rosa Beach, FL",tideS
 // Fallback used only if the NOAA station list can't be fetched (offline, etc.)
 const FALLBACK_STATION={id:"8729376",name:"Santa Rosa Hogtown Bayou",state:"FL",lat:30.4,lon:-86.2283};
 let tideStations=[FALLBACK_STATION];
-let config={...DEFAULTS,...JSON.parse(localStorage.getItem("fishConfig")||"{}")};let lastNotificationKey="",map,forecastMarker,tideMarker,accuracyCircle;const $=id=>document.getElementById(id);
+let config={...DEFAULTS,...JSON.parse(localStorage.getItem("fishConfig")||"{}")};let lastNotificationKey="",map,forecastMarker,tideMarker;const $=id=>document.getElementById(id);
 $("notifyScore").value=config.notifyScore;$("locationName").textContent=config.locationName;
 function saveConfig(){config.notifyScore=Number($("notifyScore").value||72);config.tideStation=$("tideStation").value.trim()||DEFAULTS.tideStation;localStorage.setItem("fishConfig",JSON.stringify(config))}
 function escapeHtml(v){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"})[c])}
 
-// --- Map (v0.2.1 stability rewrite, v0.2.3 multi-source) ------------------
-// v0.2.3: rather than depending on one tile provider, we keep an ordered
-// list. If the active source starts erroring out repeatedly (an outage,
-// rate limiting, etc.) we automatically swap to the next one instead of
-// leaving gray tiles on screen.
-const TILE_SOURCES=[
-  {url:"https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",options:{subdomains:"abcd",maxZoom:20,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'}},
-  {url:"https://tile.openstreetmap.org/{z}/{x}/{y}.png",options:{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}},
-  {url:"https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",options:{subdomains:"abc",maxZoom:17,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, SRTM | &copy; OpenTopoMap'}}
-];
-let activeTileIndex=0,tileErrorCount=0,tileLayer;
-function addTileLayer(index){
-  if(tileLayer)map.removeLayer(tileLayer);
-  const src=TILE_SOURCES[index];
-  activeTileIndex=index;
-  tileErrorCount=0;
-  tileLayer=L.tileLayer(src.url,src.options).addTo(map);
-  tileLayer.on("tileerror",err=>{
-    tileErrorCount++;
-    // Retry the individual failed tile (up to 2x) instead of leaving it
-    // permanently blank — this is what was missing: scattered one-off tile
-    // failures (a handful out of dozens per view) never hit the "swap the
-    // whole source" threshold below, so they just sat blank forever.
-    const tile=err.tile;
-    if(tile){
-      const attempts=Number(tile.dataset.retryCount||0);
-      if(attempts<2){
-        tile.dataset.retryCount=String(attempts+1);
-        setTimeout(()=>{tile.src=tile.src},600*(attempts+1));
-      }
-    }
-    // Separately, if the whole source is unhealthy (lots of errors, not
-    // just one-off blips), swap to the next source in the list.
-    if(tileErrorCount>=12 && activeTileIndex<TILE_SOURCES.length-1){
-      $("mapStatus").textContent="Switching map source…";
-      addTileLayer(activeTileIndex+1);
-    }
-  });
+// --- Map (v0.3.0 — MapLibre GL rewrite) -----------------------------------
+// Switched away from Leaflet's raster <img> tile grid entirely. That grid
+// (dozens of small stitched images) is what iOS Safari was occasionally
+// mis-compositing — showing tiles from elsewhere, misaligned by a tile or
+// two, that a redraw/reload couldn't fix, since the DOM elements themselves
+// were the problem, not the data. MapLibre renders the whole map as one
+// WebGL canvas, so there's no per-tile DOM compositing for Safari to get
+// wrong. Primary source is OpenFreeMap (free vector tiles, no key, no
+// limits). If that style ever fails to load, we fall back to a simple
+// raster style pointing at CARTO — still rendered through the same single
+// canvas, so the fallback doesn't reintroduce the original problem.
+const PRIMARY_STYLE="https://tiles.openfreemap.org/styles/liberty";
+const FALLBACK_RASTER_STYLE={
+  version:8,
+  sources:{carto:{type:"raster",tiles:[
+    "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+    "https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+    "https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png",
+    "https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
+  ],tileSize:256,attribution:'&copy; OpenStreetMap contributors &copy; CARTO'}},
+  layers:[{id:"carto-layer",type:"raster",source:"carto"}]
+};
+let mapLoaded=false,usedFallbackStyle=false;
+function metersToPixelsAtLat(meters,lat,zoom){
+  const metersPerPixel=156543.03392*Math.cos(lat*Math.PI/180)/Math.pow(2,zoom);
+  return meters/metersPerPixel;
 }
 function initMap(){
-  if(!window.L){$("mapStatus").textContent="Map library unavailable";return}
-  map=L.map("map",{zoomControl:true,attributionControl:true}).setView([config.lat,config.lon],13);
-  addTileLayer(0);
+  if(!window.maplibregl){$("mapStatus").textContent="Map library unavailable";return}
+  map=new maplibregl.Map({container:"map",style:PRIMARY_STYLE,center:[config.lon,config.lat],zoom:13,attributionControl:true});
+  map.addControl(new maplibregl.NavigationControl({showCompass:false}),"top-right");
+  map.on("style.load",()=>{mapLoaded=true;addAccuracyLayer();});
+  map.on("error",e=>{
+    console.warn("Map error",e&&e.error);
+    if(!mapLoaded&&!usedFallbackStyle){
+      usedFallbackStyle=true;
+      $("mapStatus").textContent="Switching map source…";
+      map.setStyle(FALLBACK_RASTER_STYLE);
+    }
+  });
   updateMapMarkers(false);
-  // Safety net: some stuck tiles never actually fire a "tileerror" event
-  // (e.g. a request that gets silently cancelled rather than failing), so
-  // our retry logic never sees them. Force everything currently in view
-  // to re-request once, a couple seconds after first showing the map.
-  setTimeout(()=>{if(tileLayer)tileLayer.redraw()},2500);
-  const fixSize=()=>{if(map)map.invalidateSize(false)};
+  const fixSize=()=>{if(map)map.resize()};
   setTimeout(fixSize,200);
   setTimeout(fixSize,600);
   window.addEventListener("resize",fixSize);
   window.addEventListener("orientationchange",()=>setTimeout(fixSize,300));
 }
+function addAccuracyLayer(){
+  if(!map||!map.isStyleLoaded())return;
+  if(!map.getSource("accuracy")){
+    map.addSource("accuracy",{type:"geojson",data:{type:"Feature",geometry:{type:"Point",coordinates:[config.lon,config.lat]}}});
+    map.addLayer({id:"accuracy-layer",type:"circle",source:"accuracy",paint:{"circle-radius":0,"circle-color":"#176c87","circle-opacity":.1,"circle-stroke-color":"#176c87","circle-stroke-width":1}});
+  }
+}
+function setAccuracyCircle(accuracyMeters){
+  if(!map||!map.getSource("accuracy"))return;
+  map.getSource("accuracy").setData({type:"Feature",geometry:{type:"Point",coordinates:[config.lon,config.lat]}});
+  const px=metersToPixelsAtLat(accuracyMeters,config.lat,map.getZoom());
+  map.setPaintProperty("accuracy-layer","circle-radius",px);
+}
 function updateMapMarkers(recenter=false,accuracy=null){
   if(!map)return;
   if(!forecastMarker){
-    forecastMarker=L.circleMarker([config.lat,config.lon],{radius:10,color:"#fff",weight:3,fillColor:"#176c87",fillOpacity:1}).addTo(map).bindPopup(`<strong>${escapeHtml(config.locationName)}</strong><br>Forecast location`);
+    const el=document.createElement("div");
+    el.style.cssText="width:20px;height:20px;border-radius:50%;background:#176c87;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)";
+    forecastMarker=new maplibregl.Marker({element:el}).setLngLat([config.lon,config.lat]).setPopup(new maplibregl.Popup({offset:14}).setHTML(`<strong>${escapeHtml(config.locationName)}</strong><br>Forecast location`)).addTo(map);
   }else{
-    forecastMarker.setLatLng([config.lat,config.lon]);
-    forecastMarker.setPopupContent(`<strong>${escapeHtml(config.locationName)}</strong><br>Forecast location`);
+    forecastMarker.setLngLat([config.lon,config.lat]);
+    forecastMarker.getPopup().setHTML(`<strong>${escapeHtml(config.locationName)}</strong><br>Forecast location`);
   }
   if(Number.isFinite(accuracy)&&accuracy>0){
-    if(!accuracyCircle){
-      accuracyCircle=L.circle([config.lat,config.lon],{radius:accuracy,color:"#176c87",weight:1,fillColor:"#176c87",fillOpacity:.1}).addTo(map);
-    }else{
-      accuracyCircle.setLatLng([config.lat,config.lon]);
-      accuracyCircle.setRadius(accuracy);
-    }
+    setAccuracyCircle(accuracy);
   }
   const s=tideStations.find(x=>x.id===config.tideStation);
   if(s){
     if(!tideMarker){
-      tideMarker=L.marker([s.lat,s.lon]).addTo(map).bindPopup(`<strong>⚓ ${escapeHtml(s.name)}</strong><br>Used for tide predictions`);
+      tideMarker=new maplibregl.Marker({color:"#123047"}).setLngLat([s.lon,s.lat]).setPopup(new maplibregl.Popup({offset:14}).setHTML(`<strong>⚓ ${escapeHtml(s.name)}</strong><br>Used for tide predictions`)).addTo(map);
     }else{
-      tideMarker.setLatLng([s.lat,s.lon]);
-      tideMarker.setPopupContent(`<strong>⚓ ${escapeHtml(s.name)}</strong><br>Used for tide predictions`);
+      tideMarker.setLngLat([s.lon,s.lat]);
+      tideMarker.getPopup().setHTML(`<strong>⚓ ${escapeHtml(s.name)}</strong><br>Used for tide predictions`);
     }
   }
   $("openMapsLink").href=`https://maps.apple.com/?ll=${config.lat},${config.lon}&q=${encodeURIComponent(config.locationName)}`;
   $("mapStatus").textContent=`${config.lat.toFixed(4)}, ${config.lon.toFixed(4)}`;
-  if(recenter){map.stop();map.setView([config.lat,config.lon],map.getZoom()||14);setTimeout(()=>{if(tileLayer)tileLayer.redraw()},1500)}
+  if(recenter){map.stop();map.jumpTo({center:[config.lon,config.lat],zoom:map.getZoom()||14})}
 }
 // -------------------------------------------------------------------------
 
@@ -105,16 +107,15 @@ function initTabs(){
       document.querySelectorAll(".tab-panel").forEach(p=>p.classList.toggle("active",p.id===`panel-${btn.dataset.tab}`));
       window.scrollTo({top:0,behavior:"smooth"});
       if(btn.dataset.tab==="map"){
-        // Leaflet measures its container's size when it's created. A map
-        // built while its tab is hidden (display:none) gets a 0x0 reading,
-        // which is what produced the glitchy/blotchy tiles — no amount of
-        // invalidateSize() afterward fully recovers from that. The fix is
-        // to not build the map until its panel is actually visible.
+        // A map built while its tab is hidden (display:none) measures a
+        // 0x0 container. The fix is to not build the map until its panel
+        // is actually visible (still true for MapLibre, same as it was for
+        // Leaflet).
         if(!map){
           initMap();
         }else{
-          setTimeout(()=>map.invalidateSize(false),50);
-          setTimeout(()=>map.invalidateSize(false),300);
+          setTimeout(()=>map.resize(),50);
+          setTimeout(()=>map.resize(),300);
         }
       }
       if(btn.dataset.tab==="cameras"){renderCameras()}
