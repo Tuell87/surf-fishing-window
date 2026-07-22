@@ -1,7 +1,9 @@
 const DEFAULTS={lat:30.346,lon:-86.227,locationName:"Santa Rosa Beach, FL",tideStation:"8729376",notifyScore:72};
-const TIDE_STATIONS={"8729376":{name:"NOAA 8729376 — Santa Rosa Hogtown Bayou",lat:30.4,lon:-86.2283}};
+// Fallback used only if the NOAA station list can't be fetched (offline, etc.)
+const FALLBACK_STATION={id:"8729376",name:"Santa Rosa Hogtown Bayou",state:"FL",lat:30.4,lon:-86.2283};
+let tideStations=[FALLBACK_STATION];
 let config={...DEFAULTS,...JSON.parse(localStorage.getItem("fishConfig")||"{}")};let lastNotificationKey="",map,forecastMarker,tideMarker,accuracyCircle;const $=id=>document.getElementById(id);
-$("notifyScore").value=config.notifyScore;$("tideStation").value=config.tideStation;$("locationName").textContent=config.locationName;
+$("notifyScore").value=config.notifyScore;$("locationName").textContent=config.locationName;
 function saveConfig(){config.notifyScore=Number($("notifyScore").value||72);config.tideStation=$("tideStation").value.trim()||DEFAULTS.tideStation;localStorage.setItem("fishConfig",JSON.stringify(config))}
 function escapeHtml(v){return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"})[c])}
 
@@ -57,7 +59,7 @@ function updateMapMarkers(recenter=false,accuracy=null){
       accuracyCircle.setRadius(accuracy);
     }
   }
-  const s=TIDE_STATIONS[config.tideStation];
+  const s=tideStations.find(x=>x.id===config.tideStation);
   if(s){
     if(!tideMarker){
       tideMarker=L.marker([s.lat,s.lon]).addTo(map).bindPopup(`<strong>⚓ ${escapeHtml(s.name)}</strong><br>Used for tide predictions`);
@@ -83,9 +85,19 @@ function initTabs(){
       buttons.forEach(b=>{b.classList.toggle("active",b===btn);b.setAttribute("aria-selected",b===btn?"true":"false")});
       document.querySelectorAll(".tab-panel").forEach(p=>p.classList.toggle("active",p.id===`panel-${btn.dataset.tab}`));
       window.scrollTo({top:0,behavior:"smooth"});
-      // Leaflet can't measure a map hidden by display:none, so recheck the
-      // size right after the Map panel becomes visible again.
-      if(btn.dataset.tab==="map"&&map){setTimeout(()=>map.invalidateSize(false),50)}
+      if(btn.dataset.tab==="map"){
+        // Leaflet measures its container's size when it's created. A map
+        // built while its tab is hidden (display:none) gets a 0x0 reading,
+        // which is what produced the glitchy/blotchy tiles — no amount of
+        // invalidateSize() afterward fully recovers from that. The fix is
+        // to not build the map until its panel is actually visible.
+        if(!map){
+          initMap();
+        }else{
+          setTimeout(()=>map.invalidateSize(false),50);
+          setTimeout(()=>map.invalidateSize(false),300);
+        }
+      }
       if(btn.dataset.tab==="cameras"){renderCameras()}
     });
   });
@@ -149,6 +161,49 @@ async function renderCameras(){
 }
 // -------------------------------------------------------------------------
 
+// --- Tide stations -------------------------------------------------------
+// NOAA's own public station directory (no key needed) — fetched once,
+// then filtered/sorted by distance from the current forecast location,
+// same pattern as the live cams list.
+const NOAA_STATIONS_URL="https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json?type=tidepredictions";
+let tideStationsLoaded=false;
+async function loadTideStations(){
+  if(tideStationsLoaded)return tideStations;
+  try{
+    const r=await fetch(NOAA_STATIONS_URL);
+    if(!r.ok)throw new Error(`${r.status} from NOAA station list`);
+    const data=await r.json();
+    const list=(data.stationList||data.stations||[]).filter(s=>Number.isFinite(s.lat)&&Number.isFinite(s.lng)).map(s=>({id:String(s.id),name:s.name,state:s.state||"",lat:s.lat,lon:s.lng}));
+    if(list.length)tideStations=list;
+    tideStationsLoaded=true;
+  }catch(err){
+    console.warn("NOAA station list unavailable, using fallback station",err);
+    tideStations=[FALLBACK_STATION];
+  }
+  return tideStations;
+}
+function renderTideStationOptions(){
+  const withDist=tideStations.map(s=>({...s,miles:milesBetween(config.lat,config.lon,s.lat,s.lon)})).sort((a,b)=>a.miles-b.miles);
+  const nearest=withDist.slice(0,20);
+  // Always keep the currently-selected station in the list even if it fell
+  // outside the nearest 20, so switching location doesn't silently change it.
+  if(!nearest.some(s=>s.id===config.tideStation)){
+    const current=withDist.find(s=>s.id===config.tideStation);
+    if(current)nearest.unshift(current);
+  }
+  const sel=$("tideStation");
+  sel.innerHTML=nearest.map(s=>`<option value="${s.id}">${s.id} — ${escapeHtml(s.name)}${s.state?", "+escapeHtml(s.state):""} (${s.miles.toFixed(1)} mi)</option>`).join("");
+  sel.value=config.tideStation;
+  if(sel.value!==config.tideStation && nearest.length){
+    // Selected station wasn't in the list at all (e.g. first load); default
+    // to the nearest one instead of silently leaving it blank.
+    config.tideStation=nearest[0].id;
+    sel.value=config.tideStation;
+    saveConfig();
+  }
+}
+// -------------------------------------------------------------------------
+
 function windMph(t){return parseFloat(String(t||"0").match(/[\d.]+/)?.[0]||0)}function dateYmd(d){return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}`}function fmtTime(d){return new Intl.DateTimeFormat("en-US",{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(d)}
 function fmtHour(d){return new Intl.DateTimeFormat("en-US",{hour:"numeric",minute:"2-digit"}).format(d)}
 function dayLabel(d){const today=new Date(),tom=new Date(Date.now()+86400000);if(d.toDateString()===today.toDateString())return"Today";if(d.toDateString()===tom.toDateString())return"Tomorrow";return new Intl.DateTimeFormat("en-US",{weekday:"long",month:"short",day:"numeric"}).format(d)}
@@ -175,4 +230,4 @@ function scorePeriod(p,tides,dangers){const start=new Date(p.startTime),wind=win
 function render(windows,dangers){const safety=$("safetyCard");safety.className=`card safety ${dangers.length?"danger":"safe"}`;$("safetyTitle").textContent=dangers.length?"Do not surf fish right now":"No major hazard override detected";$("safetyText").textContent=dangers.length?`Active alert${dangers.length>1?"s":""}: ${dangers.join(", ")}. Local flags and officials override this app.`:"Continue checking lightning, beach flags, surf height, and local instructions.";const eligible=dangers.length?windows:windows.filter(w=>w.start>new Date()),best=[...eligible].sort((a,b)=>b.score-a.score)[0];if(best){$("bestTime").textContent=fmtTime(best.start);$("bestScore").textContent=best.score;$("bestSummary").textContent=dangers.length?`Hazard override active. Computed score: ${best.verdict}.`:`${best.verdict} • ${best.tide}`}$("windows").innerHTML=renderWindowsCompact(windows);$("updatedAt").textContent=`Updated ${new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})}`;localStorage.setItem("lastForecast",JSON.stringify({windows,dangers,savedAt:new Date().toISOString()}));maybeNotify(best,dangers)}
 async function refresh(){$("refreshBtn").disabled=true;$("safetyTitle").textContent="Checking official conditions…";try{saveConfig();updateMapMarkers(false);const[{periods,alerts},tides]=await Promise.all([fetchWeather(),fetchTides()]),dangers=dangerAlerts(alerts),windows=periods.slice(0,48).map(p=>scorePeriod(p,tides,dangers));render(windows,dangers)}catch(e){$("safetyCard").className="card safety warning";$("safetyTitle").textContent="Live update unavailable";$("safetyText").textContent=`${e.message}. Showing the most recent saved data when available.`;const saved=JSON.parse(localStorage.getItem("lastForecast")||"null");if(saved)render(saved.windows.map(w=>({...w,start:new Date(w.start)})),saved.dangers)}finally{$("refreshBtn").disabled=false}}
 async function maybeNotify(best,dangers){if(!best||dangers.length||!("Notification"in window)||Notification.permission!=="granted"||best.score<config.notifyScore)return;const key=`${best.start.toISOString()}-${best.score}`;if(key===lastNotificationKey)return;lastNotificationKey=key;new Notification("Good surf-fishing window found",{body:`${fmtTime(best.start)}: ${best.score}/100 (${best.verdict}). ${best.tide}`,icon:"icons/icon-192.png"})}
-$("refreshBtn").addEventListener("click",refresh);$("notifyScore").addEventListener("change",saveConfig);$("tideStation").addEventListener("change",()=>{saveConfig();updateMapMarkers(false)});$("centerMapBtn").addEventListener("click",()=>updateMapMarkers(true));$("locationBtn").addEventListener("click",()=>{if(!navigator.geolocation){alert("Location is not supported on this device.");return}$("mapStatus").textContent="Finding your location…";navigator.geolocation.getCurrentPosition(pos=>{config.lat=pos.coords.latitude;config.lon=pos.coords.longitude;config.locationName="Current location";$("locationName").textContent=config.locationName;saveConfig();updateMapMarkers(true,pos.coords.accuracy);renderCameras();refresh()},err=>{$("mapStatus").textContent="Location not changed";alert(`Location permission was not granted: ${err.message}`)},{enableHighAccuracy:true,timeout:15000,maximumAge:60000})});$("notifyBtn").addEventListener("click",async()=>{if(!("Notification"in window)){alert("Notifications are not supported here.");return}const result=await Notification.requestPermission();alert(result==="granted"?"Notifications enabled while the app is open.":"Notification permission was not granted.")});$("dismissInstall").addEventListener("click",()=>$("installCard").classList.add("hidden"));if(navigator.standalone!==true)$("installCard").classList.remove("hidden");if("serviceWorker"in navigator)navigator.serviceWorker.register("service-worker.js");initTabs();initMap();renderCameras();refresh();setInterval(refresh,15*60*1000);
+$("refreshBtn").addEventListener("click",refresh);$("notifyScore").addEventListener("change",saveConfig);$("tideStation").addEventListener("change",()=>{saveConfig();updateMapMarkers(false)});$("centerMapBtn").addEventListener("click",()=>updateMapMarkers(true));$("locationBtn").addEventListener("click",()=>{if(!navigator.geolocation){alert("Location is not supported on this device.");return}$("mapStatus").textContent="Finding your location…";navigator.geolocation.getCurrentPosition(pos=>{config.lat=pos.coords.latitude;config.lon=pos.coords.longitude;config.locationName="Current location";$("locationName").textContent=config.locationName;saveConfig();updateMapMarkers(true,pos.coords.accuracy);renderCameras();renderTideStationOptions();refresh()},err=>{$("mapStatus").textContent="Location not changed";alert(`Location permission was not granted: ${err.message}`)},{enableHighAccuracy:true,timeout:15000,maximumAge:60000})});$("notifyBtn").addEventListener("click",async()=>{if(!("Notification"in window)){alert("Notifications are not supported here.");return}const result=await Notification.requestPermission();alert(result==="granted"?"Notifications enabled while the app is open.":"Notification permission was not granted.")});$("dismissInstall").addEventListener("click",()=>$("installCard").classList.add("hidden"));if(navigator.standalone!==true)$("installCard").classList.remove("hidden");if("serviceWorker"in navigator)navigator.serviceWorker.register("service-worker.js");initTabs();loadTideStations().then(renderTideStationOptions);renderCameras();refresh();setInterval(refresh,15*60*1000);
