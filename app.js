@@ -224,6 +224,82 @@ function renderTideStationOptions(){
 }
 // -------------------------------------------------------------------------
 
+// --- NWS beach flag / rip current status ----------------------------------
+// NWS's "Surf Zone Forecast" (SRF) product is issued per coastal office and
+// covers many counties/zones at once. Some issuances include an actual
+// "based on communication with area beach officials" flag-color summary —
+// real, GPS-locatable, authoritative data with no per-county curation
+// needed. But that summary isn't in every issuance (it comes and goes), so
+// we fall back to the same product's Rip Current Risk for the local zone —
+// which IS always present — clearly labeled as a related-but-different
+// number, never presented as if it were the actual posted flag.
+async function fetchNwsBeachStatus(){
+  try{
+    const p=await getJson(`https://api.weather.gov/points/${config.lat.toFixed(4)},${config.lon.toFixed(4)}`);
+    const cwa=p.properties.cwa,zoneUrl=p.properties.forecastZone;
+    if(!cwa||!zoneUrl)return{available:false};
+    const zoneData=await getJson(zoneUrl);
+    const zoneName=zoneData.properties.name;
+    const list=await getJson(`https://api.weather.gov/products/types/SRF/locations/${cwa}`);
+    const items=list["@graph"]||[];
+    if(!items.length)return{available:false,zoneName};
+    const prod=await getJson(`https://api.weather.gov/products/${items[0].id}`);
+    const text=prod.productText||"",issued=prod.issuanceTime;
+    const flagBlockMatch=text.match(/flying at area beaches:\s*\n+([\s\S]*?)\n\s*\n/i);
+    if(flagBlockMatch){
+      const lines=flagBlockMatch[1].split("\n").map(l=>l.trim()).filter(Boolean);
+      const lastWord=zoneName.split(" ").pop().toLowerCase();
+      for(const line of lines){
+        const m=line.match(/^(.+?)\.{2,}\s*(.+)$/);
+        if(!m)continue;
+        const label=m[1].trim(),color=m[2].trim();
+        if(zoneName.toLowerCase().includes(label.toLowerCase())||label.toLowerCase().includes(lastWord)){
+          return{available:true,kind:"flag",color,zoneName,issued,office:cwa};
+        }
+      }
+    }
+    const lines=text.split("\n");
+    const startIdx=lines.findIndex(l=>l.trim().replace(/-$/,"")===zoneName);
+    if(startIdx!==-1){
+      const rest=lines.slice(startIdx);
+      const endIdx=rest.findIndex(l=>l.trim()==="$$");
+      const block=(endIdx===-1?rest:rest.slice(0,endIdx)).join("\n");
+      const ripMatch=block.match(/Rip Current Risk\.*\s*([A-Za-z]+)\./);
+      if(ripMatch)return{available:true,kind:"rip",risk:ripMatch[1],zoneName,issued,office:cwa};
+    }
+    return{available:false,zoneName};
+  }catch(err){
+    console.warn("NWS beach status unavailable",err);
+    return{available:false};
+  }
+}
+function flagColorStyle(color){
+  const c=color.toUpperCase();
+  if(c.includes("DOUBLE RED"))return{bg:"#c92a2a",fg:"#fff",label:"Double Red — Water closed to the public"};
+  if(c.includes("RED"))return{bg:"#e03131",fg:"#fff",label:"Red — High hazard"};
+  if(c.includes("YELLOW"))return{bg:"#f5c518",fg:"#4a3b00",label:"Yellow — Medium hazard"};
+  if(c.includes("GREEN"))return{bg:"#2b8a3e",fg:"#fff",label:"Green — Low hazard"};
+  if(c.includes("PURPLE"))return{bg:"#7048e8",fg:"#fff",label:"Purple — Dangerous marine life"};
+  return{bg:"#748ffc",fg:"#fff",label:color};
+}
+async function renderNwsFlagStatus(){
+  const el=$("nwsFlagContent");
+  if(!el)return;
+  el.innerHTML=`<p class="fineprint">Checking official conditions…</p>`;
+  const status=await fetchNwsBeachStatus();
+  if(!status.available){
+    el.innerHTML=`<p class="fineprint">No official NWS flag or rip-current bulletin found right now${status.zoneName?` for ${escapeHtml(status.zoneName)}`:" for this location"}. Check local beach patrol directly.</p>`;
+    return;
+  }
+  if(status.kind==="flag"){
+    const s=flagColorStyle(status.color);
+    el.innerHTML=`<div class="flag-chip" style="background:${s.bg};color:${s.fg}">${escapeHtml(s.label)}</div><p class="fineprint">Reported by NWS ${escapeHtml(status.office)}, based on communication with area beach officials, for ${escapeHtml(status.zoneName)}. Issued ${new Date(status.issued).toLocaleString("en-US",{hour:"numeric",minute:"2-digit",month:"short",day:"numeric"})}.</p>`;
+  }else{
+    el.innerHTML=`<div class="flag-chip rip-${escapeHtml(status.risk.toLowerCase())}">NWS Rip Current Risk: ${escapeHtml(status.risk.toUpperCase())}</div><p class="fineprint">This is the rip current risk for ${escapeHtml(status.zoneName)}, not the posted beach flag itself — related, but set separately by local officials. Check local flags directly for the exact color. Issued ${new Date(status.issued).toLocaleString("en-US",{hour:"numeric",minute:"2-digit",month:"short",day:"numeric"})}.</p>`;
+  }
+}
+// -------------------------------------------------------------------------
+
 function windMph(t){return parseFloat(String(t||"0").match(/[\d.]+/)?.[0]||0)}function dateYmd(d){return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}`}function fmtTime(d){return new Intl.DateTimeFormat("en-US",{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(d)}
 function fmtHour(d){return new Intl.DateTimeFormat("en-US",{hour:"numeric",minute:"2-digit"}).format(d)}
 function dayLabel(d){const today=new Date(),tom=new Date(Date.now()+86400000);if(d.toDateString()===today.toDateString())return"Today";if(d.toDateString()===tom.toDateString())return"Tomorrow";return new Intl.DateTimeFormat("en-US",{weekday:"long",month:"short",day:"numeric"}).format(d)}
@@ -250,4 +326,4 @@ function scorePeriod(p,tides,dangers){const start=new Date(p.startTime),wind=win
 function render(windows,dangers){const safety=$("safetyCard");safety.className=`card safety ${dangers.length?"danger":"safe"}`;$("safetyTitle").textContent=dangers.length?"Do not surf fish right now":"No major hazard override detected";$("safetyText").textContent=dangers.length?`Active alert${dangers.length>1?"s":""}: ${dangers.join(", ")}. Local flags and officials override this app.`:"Continue checking lightning, beach flags, surf height, and local instructions.";const eligible=dangers.length?windows:windows.filter(w=>w.start>new Date()),best=[...eligible].sort((a,b)=>b.score-a.score)[0];if(best){$("bestTime").textContent=fmtTime(best.start);$("bestScore").textContent=best.score;$("bestSummary").textContent=dangers.length?`Hazard override active. Computed score: ${best.verdict}.`:`${best.verdict} • ${best.tide}`}$("windows").innerHTML=renderWindowsCompact(windows);$("updatedAt").textContent=`Updated ${new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})}`;localStorage.setItem("lastForecast",JSON.stringify({windows,dangers,savedAt:new Date().toISOString()}));maybeNotify(best,dangers)}
 async function refresh(){$("refreshBtn").disabled=true;$("safetyTitle").textContent="Checking official conditions…";try{saveConfig();updateMapMarkers(false);const[{periods,alerts},tides]=await Promise.all([fetchWeather(),fetchTides()]),dangers=dangerAlerts(alerts),windows=periods.slice(0,48).map(p=>scorePeriod(p,tides,dangers));render(windows,dangers)}catch(e){$("safetyCard").className="card safety warning";$("safetyTitle").textContent="Live update unavailable";$("safetyText").textContent=`${e.message}. Showing the most recent saved data when available.`;const saved=JSON.parse(localStorage.getItem("lastForecast")||"null");if(saved)render(saved.windows.map(w=>({...w,start:new Date(w.start)})),saved.dangers)}finally{$("refreshBtn").disabled=false}}
 async function maybeNotify(best,dangers){if(!best||dangers.length||!("Notification"in window)||Notification.permission!=="granted"||best.score<config.notifyScore)return;const key=`${best.start.toISOString()}-${best.score}`;if(key===lastNotificationKey)return;lastNotificationKey=key;new Notification("Good surf-fishing window found",{body:`${fmtTime(best.start)}: ${best.score}/100 (${best.verdict}). ${best.tide}`,icon:"icons/icon-192.png"})}
-$("refreshBtn").addEventListener("click",refresh);$("notifyScore").addEventListener("change",saveConfig);$("tideStation").addEventListener("change",()=>{saveConfig();updateMapMarkers(false)});$("centerMapBtn").addEventListener("click",()=>updateMapMarkers(true));$("locationBtn").addEventListener("click",()=>{if(!navigator.geolocation){alert("Location is not supported on this device.");return}$("mapStatus").textContent="Finding your location…";navigator.geolocation.getCurrentPosition(pos=>{config.lat=pos.coords.latitude;config.lon=pos.coords.longitude;config.locationName="Current location";$("locationName").textContent=config.locationName;saveConfig();updateMapMarkers(true,pos.coords.accuracy);renderCameras();renderTideStationOptions();refresh()},err=>{$("mapStatus").textContent="Location not changed";alert(`Location permission was not granted: ${err.message}`)},{enableHighAccuracy:true,timeout:15000,maximumAge:60000})});$("notifyBtn").addEventListener("click",async()=>{if(!("Notification"in window)){alert("Notifications are not supported here.");return}const result=await Notification.requestPermission();alert(result==="granted"?"Notifications enabled while the app is open.":"Notification permission was not granted.")});$("dismissInstall").addEventListener("click",()=>$("installCard").classList.add("hidden"));if(navigator.standalone!==true)$("installCard").classList.remove("hidden");if("serviceWorker"in navigator)navigator.serviceWorker.register("service-worker.js");initTabs();loadTideStations().then(renderTideStationOptions);renderCameras();refresh();setInterval(refresh,15*60*1000);
+$("refreshBtn").addEventListener("click",refresh);$("notifyScore").addEventListener("change",saveConfig);$("tideStation").addEventListener("change",()=>{saveConfig();updateMapMarkers(false)});$("centerMapBtn").addEventListener("click",()=>updateMapMarkers(true));$("locationBtn").addEventListener("click",()=>{if(!navigator.geolocation){alert("Location is not supported on this device.");return}$("mapStatus").textContent="Finding your location…";navigator.geolocation.getCurrentPosition(pos=>{config.lat=pos.coords.latitude;config.lon=pos.coords.longitude;config.locationName="Current location";$("locationName").textContent=config.locationName;saveConfig();updateMapMarkers(true,pos.coords.accuracy);renderCameras();renderTideStationOptions();renderNwsFlagStatus();refresh()},err=>{$("mapStatus").textContent="Location not changed";alert(`Location permission was not granted: ${err.message}`)},{enableHighAccuracy:true,timeout:15000,maximumAge:60000})});$("notifyBtn").addEventListener("click",async()=>{if(!("Notification"in window)){alert("Notifications are not supported here.");return}const result=await Notification.requestPermission();alert(result==="granted"?"Notifications enabled while the app is open.":"Notification permission was not granted.")});$("dismissInstall").addEventListener("click",()=>$("installCard").classList.add("hidden"));if(navigator.standalone!==true)$("installCard").classList.remove("hidden");if("serviceWorker"in navigator)navigator.serviceWorker.register("service-worker.js");initTabs();loadTideStations().then(renderTideStationOptions);renderCameras();renderNwsFlagStatus();refresh();setInterval(refresh,15*60*1000);
