@@ -378,7 +378,15 @@ async function renderFishActivity(){
     el.innerHTML=`<p class="fineprint">No species in our reference list are typically active this month for this region.</p>`;
     return;
   }
-  el.innerHTML=species.map(s=>`<article class="species-row${s.tempMatch===false?" species-cool":""}"><div class="species-name">${escapeHtml(s.name)}${s.tempMatch===true?' <span class="species-badge">water\'s right</span>':""}</div><div class="species-detail">${escapeHtml(s.bait)} • ${escapeHtml(s.tip)}</div></article>`).join("");
+  // Tighten the list using real data we already have: when we know the
+  // actual water temperature, only show species it actually matches
+  // rather than every in-season possibility. Falls back to the full
+  // in-season list if that filter would empty it out (e.g. an unusually
+  // cold/warm reading for the month).
+  const tempFiltered=waterTemp==null?species:species.filter(s=>s.tempMatch!==false);
+  const shown=tempFiltered.length?tempFiltered:species;
+  const note=waterTemp!=null&&tempFiltered.length?`<p class="fineprint">Narrowed to species whose preferred water temperature matches today's ${waterTemp}°F reading.</p>`:"";
+  el.innerHTML=shown.map(s=>`<article class="species-row${s.tempMatch===false?" species-cool":""}"><div class="species-name">${escapeHtml(s.name)}${s.tempMatch===true?' <span class="species-badge">water\'s right</span>':""}</div><div class="species-detail">${escapeHtml(s.bait)} • ${escapeHtml(s.tip)}</div></article>`).join("")+note;
 }
 // -------------------------------------------------------------------------
 
