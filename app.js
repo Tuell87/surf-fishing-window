@@ -245,29 +245,36 @@ async function fetchNwsBeachStatus(){
     if(!items.length)return{available:false,zoneName};
     const prod=await getJson(`https://api.weather.gov/products/${items[0].id}`);
     const text=prod.productText||"",issued=prod.issuanceTime;
+    // Pull out this zone's own block once — used for both rip risk and
+    // water temperature (the latter feeds the fish activity feature).
+    const lines=text.split("\n");
+    const startIdx=lines.findIndex(l=>l.trim().replace(/-$/,"")===zoneName);
+    let zoneBlock="";
+    if(startIdx!==-1){
+      const rest=lines.slice(startIdx);
+      const endIdx=rest.findIndex(l=>l.trim()==="$$");
+      zoneBlock=(endIdx===-1?rest:rest.slice(0,endIdx)).join("\n");
+    }
+    const waterTempMatch=zoneBlock.match(/Water Temperature\.*\s*(\d+)/);
+    const waterTemp=waterTempMatch?Number(waterTempMatch[1]):null;
     const flagBlockMatch=text.match(/flying at area beaches:\s*\n+([\s\S]*?)\n\s*\n/i);
     if(flagBlockMatch){
-      const lines=flagBlockMatch[1].split("\n").map(l=>l.trim()).filter(Boolean);
+      const lines2=flagBlockMatch[1].split("\n").map(l=>l.trim()).filter(Boolean);
       const lastWord=zoneName.split(" ").pop().toLowerCase();
-      for(const line of lines){
+      for(const line of lines2){
         const m=line.match(/^(.+?)\.{2,}\s*(.+)$/);
         if(!m)continue;
         const label=m[1].trim(),color=m[2].trim();
         if(zoneName.toLowerCase().includes(label.toLowerCase())||label.toLowerCase().includes(lastWord)){
-          return{available:true,kind:"flag",color,zoneName,issued,office:cwa};
+          return{available:true,kind:"flag",color,zoneName,issued,office:cwa,waterTemp};
         }
       }
     }
-    const lines=text.split("\n");
-    const startIdx=lines.findIndex(l=>l.trim().replace(/-$/,"")===zoneName);
-    if(startIdx!==-1){
-      const rest=lines.slice(startIdx);
-      const endIdx=rest.findIndex(l=>l.trim()==="$$");
-      const block=(endIdx===-1?rest:rest.slice(0,endIdx)).join("\n");
-      const ripMatch=block.match(/Rip Current Risk\.*\s*([A-Za-z]+)\./);
-      if(ripMatch)return{available:true,kind:"rip",risk:ripMatch[1],zoneName,issued,office:cwa};
+    if(zoneBlock){
+      const ripMatch=zoneBlock.match(/Rip Current Risk\.*\s*([A-Za-z]+)\./);
+      if(ripMatch)return{available:true,kind:"rip",risk:ripMatch[1],zoneName,issued,office:cwa,waterTemp};
     }
-    return{available:false,zoneName};
+    return{available:false,zoneName,waterTemp};
   }catch(err){
     console.warn("NWS beach status unavailable",err);
     return{available:false};
@@ -300,6 +307,61 @@ async function renderNwsFlagStatus(){
 }
 // -------------------------------------------------------------------------
 
+// --- Likely active species --------------------------------------------
+// This is general seasonal guidance for the Florida Gulf Coast surf zone,
+// NOT a live bite report — there's no real "what's biting right now" feed
+// anywhere (checked). What IS real: which species are typically present
+// by month and preferred water temperature range, which is well-established
+// recreational fishing knowledge (matches FWC species info). We combine
+// that with today's actual water temperature when the NWS surf bulletin
+// includes one, for a slightly sharper "likely now" vs "in season but
+// water's not there yet" distinction. Always says so isn't a live report.
+const SPECIES=[
+  {name:"Pompano",months:[2,3,4,5,9,10,11],tempRange:[65,78],bait:"Sand fleas, shrimp",tip:"Just past the first sandbar, moving tide"},
+  {name:"Gulf Whiting",months:[1,2,3,4,5,6,7,8,9,10,11,12],tempRange:[55,85],bait:"Shrimp, FishBites",tip:"Any tide, close to the trough"},
+  {name:"Redfish (Red Drum)",months:[1,2,3,4,9,10,11,12],tempRange:[60,80],bait:"Cut bait, shrimp",tip:"Moving tide, dawn or dusk"},
+  {name:"Spanish Mackerel",months:[5,6,7,8,9,10],tempRange:[72,88],bait:"Spoons, cut bait on a Sabiki",tip:"Moving tide, near bait schools"},
+  {name:"Bluefish",months:[10,11,12,1,2,3],tempRange:[55,72],bait:"Cut bait, spoons",tip:"Cooler months, moving water"},
+  {name:"Black Drum",months:[1,2,3,4,10,11,12],tempRange:[55,75],bait:"Shrimp, crab",tip:"Bottom rig, slower current"},
+  {name:"Sheepshead",months:[11,12,1,2,3],tempRange:[55,70],bait:"Fiddler crabs, shrimp",tip:"Near piers, jetties, or structure"},
+  {name:"Flounder",months:[9,10,11],tempRange:[65,80],bait:"Live mud minnows, mullet",tip:"Fall run, bottom-hugging drift"},
+  {name:"Speckled Trout",months:[1,2,3,4,5,9,10,11,12],tempRange:[60,82],bait:"Live shrimp, soft plastics",tip:"Moving tide, dawn or dusk"},
+  {name:"Tarpon",months:[6,7,8,9],tempRange:[78,88],bait:"Live bait, large crabs",tip:"Warmest months, passes and beaches"},
+  {name:"Cobia",months:[3,4],tempRange:[68,78],bait:"Live eels, large jigs",tip:"Spring migration — sight-cast from piers/beach"}
+];
+function activeSpeciesNow(waterTemp){
+  const month=new Date().getMonth()+1;
+  const inSeason=SPECIES.filter(s=>s.months.includes(month));
+  return inSeason.map(s=>{
+    const tempMatch=waterTemp==null?null:(waterTemp>=s.tempRange[0]-5&&waterTemp<=s.tempRange[1]+5);
+    return{...s,tempMatch};
+  }).sort((a,b)=>{
+    if(a.tempMatch===b.tempMatch)return 0;
+    if(a.tempMatch===true)return -1;
+    if(b.tempMatch===true)return 1;
+    return 0;
+  });
+}
+async function renderFishActivity(){
+  const el=$("speciesList");
+  if(!el)return;
+  el.innerHTML=`<p class="fineprint">Checking seasonal conditions…</p>`;
+  let waterTemp=null;
+  try{
+    const status=await fetchNwsBeachStatus();
+    waterTemp=status.waterTemp??null;
+  }catch(err){console.warn("Water temp unavailable for species guidance",err)}
+  const monthName=new Intl.DateTimeFormat("en-US",{month:"long"}).format(new Date());
+  $("speciesStatus").textContent=waterTemp?`${monthName} • water ${waterTemp}°F`:monthName;
+  const species=activeSpeciesNow(waterTemp);
+  if(!species.length){
+    el.innerHTML=`<p class="fineprint">No species in our reference list are typically active this month for this region.</p>`;
+    return;
+  }
+  el.innerHTML=species.map(s=>`<article class="species-row${s.tempMatch===false?" species-cool":""}"><div class="species-name">${escapeHtml(s.name)}${s.tempMatch===true?' <span class="species-badge">water\'s right</span>':""}</div><div class="species-detail">${escapeHtml(s.bait)} • ${escapeHtml(s.tip)}</div></article>`).join("");
+}
+// -------------------------------------------------------------------------
+
 function windMph(t){return parseFloat(String(t||"0").match(/[\d.]+/)?.[0]||0)}function dateYmd(d){return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}`}function fmtTime(d){return new Intl.DateTimeFormat("en-US",{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(d)}
 function fmtHour(d){return new Intl.DateTimeFormat("en-US",{hour:"numeric",minute:"2-digit"}).format(d)}
 function dayLabel(d){const today=new Date(),tom=new Date(Date.now()+86400000);if(d.toDateString()===today.toDateString())return"Today";if(d.toDateString()===tom.toDateString())return"Tomorrow";return new Intl.DateTimeFormat("en-US",{weekday:"long",month:"short",day:"numeric"}).format(d)}
@@ -326,4 +388,4 @@ function scorePeriod(p,tides,dangers){const start=new Date(p.startTime),wind=win
 function render(windows,dangers){const safety=$("safetyCard");safety.className=`card safety ${dangers.length?"danger":"safe"}`;$("safetyTitle").textContent=dangers.length?"Do not surf fish right now":"No major hazard override detected";$("safetyText").textContent=dangers.length?`Active alert${dangers.length>1?"s":""}: ${dangers.join(", ")}. Local flags and officials override this app.`:"Continue checking lightning, beach flags, surf height, and local instructions.";const eligible=dangers.length?windows:windows.filter(w=>w.start>new Date()),best=[...eligible].sort((a,b)=>b.score-a.score)[0];if(best){$("bestTime").textContent=fmtTime(best.start);$("bestScore").textContent=best.score;$("bestSummary").textContent=dangers.length?`Hazard override active. Computed score: ${best.verdict}.`:`${best.verdict} • ${best.tide}`}$("windows").innerHTML=renderWindowsCompact(windows);$("updatedAt").textContent=`Updated ${new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})}`;localStorage.setItem("lastForecast",JSON.stringify({windows,dangers,savedAt:new Date().toISOString()}));maybeNotify(best,dangers)}
 async function refresh(){$("refreshBtn").disabled=true;$("safetyTitle").textContent="Checking official conditions…";try{saveConfig();updateMapMarkers(false);const[{periods,alerts},tides]=await Promise.all([fetchWeather(),fetchTides()]),dangers=dangerAlerts(alerts),windows=periods.slice(0,48).map(p=>scorePeriod(p,tides,dangers));render(windows,dangers)}catch(e){$("safetyCard").className="card safety warning";$("safetyTitle").textContent="Live update unavailable";$("safetyText").textContent=`${e.message}. Showing the most recent saved data when available.`;const saved=JSON.parse(localStorage.getItem("lastForecast")||"null");if(saved)render(saved.windows.map(w=>({...w,start:new Date(w.start)})),saved.dangers)}finally{$("refreshBtn").disabled=false}}
 async function maybeNotify(best,dangers){if(!best||dangers.length||!("Notification"in window)||Notification.permission!=="granted"||best.score<config.notifyScore)return;const key=`${best.start.toISOString()}-${best.score}`;if(key===lastNotificationKey)return;lastNotificationKey=key;new Notification("Good surf-fishing window found",{body:`${fmtTime(best.start)}: ${best.score}/100 (${best.verdict}). ${best.tide}`,icon:"icons/icon-192.png"})}
-$("refreshBtn").addEventListener("click",refresh);$("notifyScore").addEventListener("change",saveConfig);$("tideStation").addEventListener("change",()=>{saveConfig();updateMapMarkers(false)});$("centerMapBtn").addEventListener("click",()=>updateMapMarkers(true));$("locationBtn").addEventListener("click",()=>{if(!navigator.geolocation){alert("Location is not supported on this device.");return}$("mapStatus").textContent="Finding your location…";navigator.geolocation.getCurrentPosition(pos=>{config.lat=pos.coords.latitude;config.lon=pos.coords.longitude;config.locationName="Current location";$("locationName").textContent=config.locationName;saveConfig();updateMapMarkers(true,pos.coords.accuracy);renderCameras();renderTideStationOptions();renderNwsFlagStatus();refresh()},err=>{$("mapStatus").textContent="Location not changed";alert(`Location permission was not granted: ${err.message}`)},{enableHighAccuracy:true,timeout:15000,maximumAge:60000})});$("notifyBtn").addEventListener("click",async()=>{if(!("Notification"in window)){alert("Notifications are not supported here.");return}const result=await Notification.requestPermission();alert(result==="granted"?"Notifications enabled while the app is open.":"Notification permission was not granted.")});$("dismissInstall").addEventListener("click",()=>$("installCard").classList.add("hidden"));if(navigator.standalone!==true)$("installCard").classList.remove("hidden");if("serviceWorker"in navigator)navigator.serviceWorker.register("service-worker.js");initTabs();loadTideStations().then(renderTideStationOptions);renderCameras();renderNwsFlagStatus();refresh();setInterval(refresh,15*60*1000);
+$("refreshBtn").addEventListener("click",refresh);$("notifyScore").addEventListener("change",saveConfig);$("tideStation").addEventListener("change",()=>{saveConfig();updateMapMarkers(false)});$("centerMapBtn").addEventListener("click",()=>updateMapMarkers(true));$("locationBtn").addEventListener("click",()=>{if(!navigator.geolocation){alert("Location is not supported on this device.");return}$("mapStatus").textContent="Finding your location…";navigator.geolocation.getCurrentPosition(pos=>{config.lat=pos.coords.latitude;config.lon=pos.coords.longitude;config.locationName="Current location";$("locationName").textContent=config.locationName;saveConfig();updateMapMarkers(true,pos.coords.accuracy);renderCameras();renderTideStationOptions();renderNwsFlagStatus();renderFishActivity();refresh()},err=>{$("mapStatus").textContent="Location not changed";alert(`Location permission was not granted: ${err.message}`)},{enableHighAccuracy:true,timeout:15000,maximumAge:60000})});$("notifyBtn").addEventListener("click",async()=>{if(!("Notification"in window)){alert("Notifications are not supported here.");return}const result=await Notification.requestPermission();alert(result==="granted"?"Notifications enabled while the app is open.":"Notification permission was not granted.")});$("dismissInstall").addEventListener("click",()=>$("installCard").classList.add("hidden"));if(navigator.standalone!==true)$("installCard").classList.remove("hidden");if("serviceWorker"in navigator)navigator.serviceWorker.register("service-worker.js");initTabs();loadTideStations().then(renderTideStationOptions);renderCameras();renderNwsFlagStatus();renderFishActivity();refresh();setInterval(refresh,15*60*1000);

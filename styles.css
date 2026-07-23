@@ -101,3 +101,11 @@
 .window-row .w-time { font-weight: 700; color: #123047; }
 .window-row .w-stat { color: #536773; }
 .window-row .badge { padding: 5px 9px; min-width: 40px; font-size: .82rem; }
+
+.species-list { background: white; border-radius: 14px; overflow: hidden; box-shadow: 0 4px 16px rgba(19,48,71,.08); margin-bottom: 8px; }
+.species-row { padding: 12px 14px; border-bottom: 1px solid #eef4f6; }
+.species-row:last-child { border-bottom: none; }
+.species-name { font-weight: 700; color: #123047; font-size: .95rem; }
+.species-detail { color: #536773; font-size: .82rem; margin-top: 2px; }
+.species-badge { display: inline-block; background: #d3f9d8; color: #1b6b2c; font-size: .68rem; font-weight: 800; padding: 2px 7px; border-radius: 999px; text-transform: uppercase; letter-spacing: .03em; vertical-align: middle; margin-left: 4px; }
+.species-row.species-cool { opacity: .68; }
