@@ -321,11 +321,18 @@ const SPECIES=[
   {name:"Gulf Whiting",months:[1,2,3,4,5,6,7,8,9,10,11,12],tempRange:[55,85],bait:"Shrimp, FishBites",tip:"Any tide, close to the trough"},
   {name:"Redfish (Red Drum)",months:[1,2,3,4,9,10,11,12],tempRange:[60,80],bait:"Cut bait, shrimp",tip:"Moving tide, dawn or dusk"},
   {name:"Spanish Mackerel",months:[5,6,7,8,9,10],tempRange:[72,88],bait:"Spoons, cut bait on a Sabiki",tip:"Moving tide, near bait schools"},
+  {name:"King Mackerel",months:[4,5,6,7,8,9,10],tempRange:[75,86],bait:"Live bait (menhaden, blue runners), wire leader",tip:"Piers or kayak-deployed baits, moving water"},
   {name:"Bluefish",months:[10,11,12,1,2,3],tempRange:[55,72],bait:"Cut bait, spoons",tip:"Cooler months, moving water"},
   {name:"Black Drum",months:[1,2,3,4,10,11,12],tempRange:[55,75],bait:"Shrimp, crab",tip:"Bottom rig, slower current"},
   {name:"Sheepshead",months:[11,12,1,2,3],tempRange:[55,70],bait:"Fiddler crabs, shrimp",tip:"Near piers, jetties, or structure"},
   {name:"Flounder",months:[9,10,11],tempRange:[65,80],bait:"Live mud minnows, mullet",tip:"Fall run, bottom-hugging drift"},
   {name:"Speckled Trout",months:[1,2,3,4,5,9,10,11,12],tempRange:[60,82],bait:"Live shrimp, soft plastics",tip:"Moving tide, dawn or dusk"},
+  {name:"Ladyfish",months:[3,4,5,6,7,8,9,10,11],tempRange:[70,86],bait:"Small jigs, soft plastics",tip:"Aggressive strikes near troughs, light tackle"},
+  {name:"Atlantic Croaker",months:[1,2,3,4,10,11,12],tempRange:[55,75],bait:"Shrimp, squid strips",tip:"Bottom rig, calmer surf"},
+  {name:"Jack Crevalle",months:[5,6,7,8,9,10],tempRange:[75,88],bait:"Cut bait, topwater plugs",tip:"Hard-fighting, near bait schools"},
+  {name:"Blacktip Shark",months:[4,5,6,7,8,9,10],tempRange:[72,85],bait:"Fresh cut bait, wire leader",tip:"Past the bar, longer leader recommended"},
+  {name:"Bonnethead Shark",months:[4,5,6,7,8,9,10],tempRange:[72,85],bait:"Shrimp, blue crab",tip:"Common close to shore, smaller than blacktips"},
+  {name:"Gafftopsail Catfish",months:[3,4,5,6,7,8,9,10,11],tempRange:[68,85],bait:"Cut bait, shrimp",tip:"Bottom fishing, any tide"},
   {name:"Tarpon",months:[6,7,8,9],tempRange:[78,88],bait:"Live bait, large crabs",tip:"Warmest months, passes and beaches"},
   {name:"Cobia",months:[3,4],tempRange:[68,78],bait:"Live eels, large jigs",tip:"Spring migration — sight-cast from piers/beach"}
 ];
@@ -342,6 +349,14 @@ function activeSpeciesNow(waterTemp){
     return 0;
   });
 }
+// Rough bounding box for the Northern Gulf Coast (TX through the FL
+// Panhandle/Big Bend) — this species list is calibrated for that stretch.
+// Not a precise coastline check, just enough to flag "you've moved
+// somewhere this list wasn't built for" rather than silently showing a
+// Gulf-specific list as if it applies anywhere.
+function isNorthernGulfCoast(lat,lon){
+  return lat>=25&&lat<=31&&lon>=-97.5&&lon<=-83;
+}
 async function renderFishActivity(){
   const el=$("speciesList");
   if(!el)return;
@@ -352,7 +367,12 @@ async function renderFishActivity(){
     waterTemp=status.waterTemp??null;
   }catch(err){console.warn("Water temp unavailable for species guidance",err)}
   const monthName=new Intl.DateTimeFormat("en-US",{month:"long"}).format(new Date());
+  const inRegion=isNorthernGulfCoast(config.lat,config.lon);
   $("speciesStatus").textContent=waterTemp?`${monthName} • water ${waterTemp}°F`:monthName;
+  if(!inRegion){
+    el.innerHTML=`<p class="fineprint">This species list is calibrated for the Northern Gulf Coast (Texas–Florida Panhandle). Your current forecast location looks like it's outside that range, so this list may not reflect what's actually around you.</p>`;
+    return;
+  }
   const species=activeSpeciesNow(waterTemp);
   if(!species.length){
     el.innerHTML=`<p class="fineprint">No species in our reference list are typically active this month for this region.</p>`;
